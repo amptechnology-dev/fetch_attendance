@@ -1,14 +1,27 @@
+const fs = require("fs");
+const path = require("path");
 const { poolPromise } = require("../config/db");
+
+const syncFile = path.join(__dirname, "../lastSync.json");
+
+const getLastSyncTime = () => {
+  if (!fs.existsSync(syncFile)) return null;
+  const data = JSON.parse(fs.readFileSync(syncFile));
+  return data.lastSync;
+};
+
+const updateLastSyncTime = (time) => {
+  fs.writeFileSync(syncFile, JSON.stringify({ lastSync: time }));
+};
 
 const getAttendanceLogs = async () => {
   const pool = await poolPromise;
 
-  // ✅ Get current year dynamically
+  const lastSync = getLastSyncTime();
+  console.log("⏱ Last Sync:", lastSync);
+
   const currentYear = new Date().getFullYear();
 
-  console.log("📅 Fetching logs for year:", currentYear);
-
-  // 🔹 Step 1: Get all tables for that year
   const tablesResult = await pool.request().query(`
     SELECT TABLE_NAME 
     FROM INFORMATION_SCHEMA.TABLES 
@@ -17,55 +30,50 @@ const getAttendanceLogs = async () => {
 
   const tables = tablesResult.recordset.map(t => t.TABLE_NAME);
 
-  console.log("📦 Tables found:", tables);
+  if (tables.length === 0) return [];
 
-  if (tables.length === 0) {
-    console.log("❌ No tables found for this year");
-    return [];
-  }
+  // 🔥 FILTER NEW DATA ONLY
+  const condition = lastSync
+    ? `WHERE LogDate > '${lastSync}'`
+    : "";
 
-  // 🔹 Step 2: Create UNION query dynamically
   const unionQuery = tables
-    .map(table => `SELECT DeviceLogId, DeviceId, UserId, LogDate, C1 FROM ${table}`)
+    .map(table => `
+      SELECT DeviceLogId, DeviceId, UserId, LogDate, C1 
+      FROM ${table} ${condition}
+    `)
     .join(" UNION ALL ");
 
-  const finalQuery = `${unionQuery} ORDER BY LogDate DESC`;
+  const finalQuery = `${unionQuery} ORDER BY LogDate ASC`;
 
   const result = await pool.request().query(finalQuery);
 
   const logs = result.recordset;
 
-  console.log("📊 Total Logs:", logs.length);
+  if (!logs.length) {
+    console.log("✅ No new logs");
+    return [];
+  }
 
-  // 🔹 Step 3: Format logs
-  const formattedLogs = logs.map((log) => {
+  // 🔥 UPDATE LAST SYNC
+  const latestTime = logs[logs.length - 1].LogDate.toISOString();
+  updateLastSyncTime(latestTime);
+
+  console.log("🆕 New logs:", logs.length);
+
+  return logs.map((log) => {
     const direction = String(log.C1).trim().toLowerCase();
-
-    let entryTime = null;
-    let exitTime = null;
-
-    if (direction === "in") {
-      entryTime = log.LogDate;
-    } else if (direction === "out") {
-      exitTime = log.LogDate;
-    }
 
     return {
       staffId: String(log.UserId),
       deviceId: String(log.DeviceId),
-
-      // ✅ IMPORTANT (backend er jonno must)
       recordTime: log.LogDate,
-
-      entryTime,
-      exitTime,
-
+      entryTime: direction === "in" ? log.LogDate : null,
+      exitTime: direction === "out" ? log.LogDate : null,
       date: log.LogDate.toISOString().split("T")[0],
       remarks: "Pushed from local agent",
     };
   });
-
-  return formattedLogs;
 };
 
 module.exports = { getAttendanceLogs };

@@ -3,16 +3,14 @@ require("dotenv").config();
 
 const sendAttendanceLogs = async (logs) => {
   try {
+    const seen = new Set();
+
     const formattedLogs = logs
       .map((log) => {
-        // ✅ entry বা exit time detect
         const time = log.entryTime || log.exitTime;
+        if (!time) return null;
 
-        if (!time) {
-          console.log("❌ Missing time:", log);
-          return null;
-        }
-
+        // ✅ FIX 1: proper date object
         const dateObj = new Date(time);
 
         if (isNaN(dateObj.getTime())) {
@@ -20,12 +18,22 @@ const sendAttendanceLogs = async (logs) => {
           return null;
         }
 
-        // ✅ direction fix
+        // ✅ FIX 2: IST → UTC correction (VERY IMPORTANT)
+        const correctedTime = new Date(
+          dateObj.getTime() - 5.5 * 60 * 60 * 1000
+        );
+
+        // ✅ FIX 3: duplicate prevention key
+        const key = `${log.staffId}_${correctedTime.toISOString()}`;
+
+        if (seen.has(key)) return null;
+        seen.add(key);
+
         const direction = log.entryTime ? "in" : "out";
 
         return {
           deviceUserId: String(log.staffId),
-          recordTime: dateObj.toISOString(),
+          recordTime: correctedTime.toISOString(), // ✅ ALWAYS ISO
           direction,
           remarks: log.remarks || "Pushed from local agent",
         };
@@ -54,7 +62,8 @@ const sendAttendanceLogs = async (logs) => {
       },
     });
 
-    console.log("✅ API Response:", response.data);
+    console.log("✅ API Response:", JSON.stringify(response.data));
+
     return response.data;
   } catch (error) {
     console.error("❌ API Error:", error.response?.data || error.message);
