@@ -28,20 +28,20 @@ const getAttendanceLogs = async () => {
     WHERE TABLE_NAME LIKE 'DeviceLogs_%_${currentYear}'
   `);
 
-  const tables = tablesResult.recordset.map(t => t.TABLE_NAME);
+  const tables = tablesResult.recordset.map((t) => t.TABLE_NAME);
 
   if (tables.length === 0) return [];
 
   // 🔥 FILTER NEW DATA ONLY
-  const condition = lastSync
-    ? `WHERE LogDate > '${lastSync}'`
-    : "";
+  const condition = lastSync ? `WHERE LogDate > '${lastSync}'` : "";
 
   const unionQuery = tables
-    .map(table => `
+    .map(
+      (table) => `
       SELECT DeviceLogId, DeviceId, UserId, LogDate, C1 
       FROM ${table} ${condition}
-    `)
+    `,
+    )
     .join(" UNION ALL ");
 
   const finalQuery = `${unionQuery} ORDER BY LogDate ASC`;
@@ -66,7 +66,7 @@ const getAttendanceLogs = async () => {
 
     return {
       staffId: String(log.UserId),
-      deviceId: String(log.DeviceId),
+      deviceId: String(log.DeviceId), 
       recordTime: log.LogDate,
       entryTime: direction === "in" ? log.LogDate : null,
       exitTime: direction === "out" ? log.LogDate : null,

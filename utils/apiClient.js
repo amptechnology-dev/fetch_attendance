@@ -10,22 +10,14 @@ const sendAttendanceLogs = async (logs) => {
         const time = log.entryTime || log.exitTime;
         if (!time) return null;
 
-        // ✅ FIX 1: proper date object
         const dateObj = new Date(time);
+        if (isNaN(dateObj.getTime())) return null;
 
-        if (isNaN(dateObj.getTime())) {
-          console.log("❌ Invalid date:", time);
-          return null;
-        }
-
-        // ✅ FIX 2: IST → UTC correction (VERY IMPORTANT)
         const correctedTime = new Date(
-          dateObj.getTime() - 5.5 * 60 * 60 * 1000
+          dateObj.getTime() - 5.5 * 60 * 60 * 1000,
         );
 
-        // ✅ FIX 3: duplicate prevention key
         const key = `${log.staffId}_${correctedTime.toISOString()}`;
-
         if (seen.has(key)) return null;
         seen.add(key);
 
@@ -33,7 +25,8 @@ const sendAttendanceLogs = async (logs) => {
 
         return {
           deviceUserId: String(log.staffId),
-          recordTime: correctedTime.toISOString(), // ✅ ALWAYS ISO
+          deviceId: String(log.deviceId),
+          recordTime: correctedTime.toISOString(),
           direction,
           remarks: log.remarks || "Pushed from local agent",
         };
@@ -48,8 +41,6 @@ const sendAttendanceLogs = async (logs) => {
     }
 
     const payload = {
-      officeId: process.env.OFFICE_ID,
-      deviceSn: process.env.DEVICE_SN,
       logs: formattedLogs,
     };
 
